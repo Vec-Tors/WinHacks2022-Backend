@@ -26,7 +26,7 @@ TARGET_POINTS_COORDS = [p['geometry']['coordinates'] for p in TARGET_POINTS]
 
 ONTARIO_HIGHWAY_REGEX = re.compile(r"ON-\d+.*")
 
-def find_existing_chargers(quantity: int = None, center_lat: float = constants['DEFAULT_CENTER_LAT'], center_long: float = constants['DEFAULT_CENTER_LONG'], radius: float = constants['DEFAULT_SEARCH_RADIUS'], format_: str = 'json'):
+def find_existing_chargers(quantity: int = None, options: dict = {}, center_lat: float = constants['DEFAULT_CENTER_LAT'], center_long: float = constants['DEFAULT_CENTER_LONG'], radius: float = constants['DEFAULT_SEARCH_RADIUS'], format_: str = 'json'):
     params = {
         'country': 'CA',
         'owner_type': 'all',
@@ -41,8 +41,8 @@ def find_existing_chargers(quantity: int = None, center_lat: float = constants['
         'longitude': center_long,
         'radius': radius,
         'limit': 'all' if quantity == None else quantity,
-        'api_key': os.environ['NREL_API_KEY']
-    }
+    } | options
+    params['api_key'] = os.environ['NREL_API_KEY']
     r = requests.get(f"https://developer.nrel.gov/api/alt-fuel-stations/v1/nearest.{format_}", params=params)
     return json.loads(r.content)
 
@@ -98,7 +98,12 @@ def find_approximate_needed_charger_locations_newcentroid(quantity: int = None, 
         remapped_points.append(point([loc.longitude, loc.latitude], properties={'address': loc.address}))
         time.sleep(0.5) # Prevent rate limit
 
-    return remapped_points
+    for p in remapped_points:
+        p['properties']['distance_to_existing'] = min([distance(p, f) for f in d['features']])
+
+    remapped_points = sorted(remapped_points, key=lambda k: k['properties']['distance_to_existing'], reverse=True)
+
+    return remapped_points[:quantity]
 
 def find_approximate_needed_charger_locations_testpoints(quantity: int = None, min_distance: float = 3, max_sub_distance: float = 3, min_sub_distance_count: int = 15, test_point_step: float = 0.02, radius: float = constants['DEFAULT_SEARCH_RADIUS'], center_lat: float = constants['DEFAULT_CENTER_LAT'], center_long: float = constants['DEFAULT_CENTER_LONG']):
     d = find_existing_chargers(format_='geojson')
